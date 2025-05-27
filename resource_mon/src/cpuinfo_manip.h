@@ -3,13 +3,17 @@
 
 #include <stdint.h>
 
-// Estructura para datos básicos de CPU
+/**
+ * Información básica de CPU obtenida de /proc/cpuinfo.
+ */
 typedef struct {
-    char model_name[128];   // línea "model name" de /proc/cpuinfo
-    uint32_t cores;         // número de núcleos (contar "processor")
+    char     model_name[128];   // la línea "model name"
+    uint32_t cores;             // núcleos lógicos (líneas "processor")
 } CPUInfo;
 
-// Estructura para lecturas de /proc/stat
+/**
+ * Estadísticas de CPU obtenidas de /proc/stat.
+ */
 typedef struct {
     uint64_t user;
     uint64_t nice;
@@ -23,20 +27,31 @@ typedef struct {
 
 /**
  * Lee /proc/cpuinfo y rellena un CPUInfo.
- * Devuelve 0 si tuvo éxito o -1 si hubo error.
+ * @return 0 si tuvo éxito, -1 en caso de error.
  */
 int read_cpu_info(CPUInfo *info);
 
 /**
- * Lee /proc/stat y rellena un CPUStat con los primeros valores de la línea "cpu ".
- * Devuelve 0 si tuvo éxito o -1 si hubo error.
+ * Lee /proc/stat y rellena un CPUStat con la línea "cpu ".
+ * @return 0 si tuvo éxito, -1 en caso de error.
  */
 int read_cpu_stat(CPUStat *stat);
 
 /**
- * Calcula el % de uso de CPU entre dos lecturas:
+ * Calcula el porcentaje de uso de CPU entre dos lecturas:
  *   usage = 100 * (delta_total - delta_idle) / delta_total
  */
 double calculate_cpu_usage(const CPUStat *prev, const CPUStat *curr);
+
+/**
+ * Devuelve el número de CPUs lógicos detectados en /proc/cpuinfo.
+ */
+int get_cpu_count(void);
+
+/**
+ * Rellena en `percentages` (array de tamaño >= get_cpu_count()) el porcentaje
+ * de uso de cada CPU individual (0.0 – 100.0).
+ */
+void get_cpu_usage(float *percentages);
 
 #endif // CPUINFO_MANIP_H

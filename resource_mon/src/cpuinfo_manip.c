@@ -1,6 +1,8 @@
 #include "cpuinfo_manip.h"
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
 
 int read_cpu_info(CPUInfo *info) {
     FILE *f = fopen("/proc/cpuinfo", "r");
@@ -10,19 +12,17 @@ int read_cpu_info(CPUInfo *info) {
     char line[256];
     while (fgets(line, sizeof(line), f)) {
         if (strncmp(line, "model name", 10) == 0) {
-            // formatea: "model name\t: Intel(R) ..."
             char *p = strchr(line, ':');
             if (p) {
-                strncpy(info->model_name, p+2, sizeof(info->model_name)-1);
-                info->model_name[sizeof(info->model_name)-1] = '\0';
-                // quitar el '\n'
+                strncpy(info->model_name, p + 2, sizeof(info->model_name) - 1);
+                info->model_name[sizeof(info->model_name) - 1] = '\0';
                 info->model_name[strcspn(info->model_name, "\n")] = '\0';
             }
-        }
-        else if (strncmp(line, "processor", 9) == 0) {
+        } else if (strncmp(line, "processor", 9) == 0) {
             info->cores++;
         }
     }
+
     fclose(f);
     return 0;
 }
@@ -31,7 +31,6 @@ int read_cpu_stat(CPUStat *stat) {
     FILE *f = fopen("/proc/stat", "r");
     if (!f) return -1;
 
-    // lectura de línea: cpu  3357 0 4313 1362393 ...
     char cpu_label[5];
     int ret = fscanf(f, "%4s %lu %lu %lu %lu %lu %lu %lu %lu",
                      cpu_label,
@@ -63,4 +62,77 @@ double calculate_cpu_usage(const CPUStat *prev, const CPUStat *curr) {
 
     if (total_delta == 0) return 0.0;
     return 100.0 * (double)(total_delta - idle_delta) / (double)total_delta;
+}
+
+int get_cpu_count(void) {
+    CPUInfo info;
+    if (read_cpu_info(&info) != 0) return 0;
+    return info.cores;
+}
+
+void get_cpu_usage(float *percentages) {
+    int n = get_cpu_count();
+    if (n <= 0) return;
+
+    CPUStat *prev = malloc(sizeof(CPUStat) * n);
+    CPUStat *curr = malloc(sizeof(CPUStat) * n);
+    char label[16];
+    int i;
+    FILE *f;
+
+    // Primera instantánea
+    f = fopen("/proc/stat", "r");
+    if (!f) {
+        free(prev);
+        free(curr);
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        rewind(f);
+        while (fscanf(f, "%15s %lu %lu %lu %lu %lu %lu %lu %lu",
+                      label,
+                      &prev[i].user,
+                      &prev[i].nice,
+                      &prev[i].system,
+                      &prev[i].idle,
+                      &prev[i].iowait,
+                      &prev[i].irq,
+                      &prev[i].softirq,
+                      &prev[i].steal) == 9) {
+            if (strncmp(label, "cpu", 3) == 0 && atoi(label + 3) == i)
+                break;
+        }
+    }
+    fclose(f);
+
+    sleep(1);
+
+    // Segunda instantánea y cálculo
+    f = fopen("/proc/stat", "r");
+    if (!f) {
+        free(prev);
+        free(curr);
+        return;
+    }
+    for (i = 0; i < n; i++) {
+        rewind(f);
+        while (fscanf(f, "%15s %lu %lu %lu %lu %lu %lu %lu %lu",
+                      label,
+                      &curr[i].user,
+                      &curr[i].nice,
+                      &curr[i].system,
+                      &curr[i].idle,
+                      &curr[i].iowait,
+                      &curr[i].irq,
+                      &curr[i].softirq,
+                      &curr[i].steal) == 9) {
+            if (strncmp(label, "cpu", 3) == 0 && atoi(label + 3) == i)
+                break;
+        }
+        percentages[i] = (float)calculate_cpu_usage(&prev[i], &curr[i]);
+    }
+    fclose(f);
+
+    free(prev);
+    free(curr);
 }
