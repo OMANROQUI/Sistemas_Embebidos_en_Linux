@@ -55,7 +55,7 @@ bin/tui_test
 bin/resource_mon
 
 # 4. Limpiar objetos y binarios
-git clean
+make clean
 ```
 
 ### Targets disponibles
