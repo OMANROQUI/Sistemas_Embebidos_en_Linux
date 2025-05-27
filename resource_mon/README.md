@@ -1,29 +1,64 @@
-# Sistemas_Embebidos_en_Linux
-# Sistema de Monitoreo de Recursos en Linux
+# resource\_mon
 
-**Objetivo:**  
-Implementar un monitor TUI que muestre uso de CPU y memoria en tiempo real.
+## Descripción
 
-**Integrantes:**  
-- Omar Andrés Rodriguez Quiceno  
-- Oscar David Guerrero Hernandez  
+**resource\_mon** es un monitor de recursos para Linux embebido que muestra en tiempo real el uso de CPU y memoria mediante una interfaz de usuario basada en **ncurses**.
 
-## Módulo meminfo_manip
+## Estructura del proyecto
 
-Este módulo proporciona funciones para leer información de memoria desde `/proc/meminfo`.
+```text
+resource_mon/
+├── src/         # Código fuente de los módulos y bucle principal
+├── obj/         # Archivos objeto generados por src/Makefile
+├── test/        # Pruebas unitarias y Makefile asociado
+├── bin/         # Ejecutables de pruebas y binario principal
+├── Makefile     # Makefile raíz para compilar src y test
+├── src/README.md  # Documentación de módulos y compilación de src
+└── test/README.md # Documentación de pruebas unitarias
+```
 
-### Funciones
+## Requisitos
 
-- `int get_meminfo(MemInfo *info)`: llena una estructura `MemInfo` con datos del sistema.
-- `float get_mem_usage_percent(const MemInfo *info)`: calcula el porcentaje de uso de memoria.
-- `float get_swap_usage_percent(const MemInfo *info)`: calcula el porcentaje de uso de swap.
+* **GCC** (compatible con C11)
+* **make**
+* **ncurses** (paquete de desarrollo: e.g., `libncurses-dev`)
 
-### Estructuras
+## Compilación y pruebas
 
-```c
-typedef struct {
-    unsigned long mem_total_kb;
-    unsigned long mem_free_kb;
-    unsigned long swap_total_kb;
-    unsigned long swap_free_kb;
-} MemInfo;
+Desde la carpeta raíz del proyecto (`resource_mon`), ejecuta:
+
+```bash
+# Compila los módulos y las pruebas
+make
+
+# Ejecuta las pruebas unitarias
+bin/cpuinfo_test
+bin/meminfo_test
+bin/tui_test
+```
+
+Para limpiar los objetos y binarios:
+
+```bash
+make clean
+```
+
+## Ejecución del monitor
+
+Una vez compilado, inicia la TUI con:
+
+```bash
+bin/resource_mon
+```
+
+Presiona `q` o `Ctrl+C` para salir.
+
+## Documentación adicional
+
+* **Módulos y compilación de src:** [src/README.md](src/README.md)
+* **Pruebas unitarias:** [test/README.md](test/README.md)
+
+## Integrantes
+
+* Omar Andrés Rodríguez Quiceno
+* Oscar David Guerrero Hernández
