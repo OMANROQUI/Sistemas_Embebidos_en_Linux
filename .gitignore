@@ -1,0 +1,8 @@
+# Archivos de build de Linux
+*.o
+*.ko
+*.mod.*
+*.symvers
+*.order
+*.cmd
+*.tmp
