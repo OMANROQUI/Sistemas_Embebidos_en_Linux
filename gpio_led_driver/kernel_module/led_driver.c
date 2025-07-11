@@ -1,9 +1,10 @@
+// kernel_module/led_driver.c
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/fs.h>        // register_chrdev, unregister_chrdev
 
 #define DEVICE_NAME "gpio_led"
-static int majorNumber;       // Major dinámico
+static int majorNumber;       // Major dinámico asignado
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("OscarDavidGuerrero");
@@ -20,6 +21,7 @@ static struct file_operations fops = {
 
 static int __init led_init(void) {
     printk(KERN_INFO "gpio_led: Init module\n");
+
     majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
     if (majorNumber < 0) {
         printk(KERN_ERR "gpio_led: Failed to register a major number\n");
@@ -36,12 +38,12 @@ static void __exit led_exit(void) {
 
 static int led_open(struct inode *inodep, struct file *filep) {
     printk(KERN_INFO "gpio_led: Device opened\n");
-    return 0;
+    return 0;  // Éxito
 }
 
 static int led_release(struct inode *inodep, struct file *filep) {
     printk(KERN_INFO "gpio_led: Device closed\n");
-    return 0;
+    return 0;  // Éxito
 }
 
 module_init(led_init);
