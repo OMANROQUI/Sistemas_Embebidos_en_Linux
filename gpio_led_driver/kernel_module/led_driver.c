@@ -1,20 +1,27 @@
 // kernel_module/led_driver.c
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/fs.h>        // register_chrdev, unregister_chrdev
-#include <linux/gpio.h>      // gpio_request, gpio_direction_output, gpio_set_value, gpio_free
-#include <linux/uaccess.h>   // copy_to_user, copy_from_user
-#include <linux/string.h>    // strcmp, strlen
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/string.h>
+#include <linux/io.h>
 
 #define DEVICE_NAME "gpio_led"
-#define LED_GPIO     17      // BCM 17 (pin físico 11)
-static int  majorNumber;
+#define PERIPH_BASE   0x3F000000UL
+#define GPIO_BASE     (PERIPH_BASE + 0x200000UL)
+#define GPFSEL1       (GPIO_BASE + 0x04)
+#define GPSET0        (GPIO_BASE + 0x1C)
+#define GPCLR0        (GPIO_BASE + 0x28)
+
+static void __iomem *gpio_virt;
+static int majorNumber;
 static bool led_state = false;
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Persona A & B – Equipo");
-MODULE_DESCRIPTION("GPIO LED driver – init/exit, open/release, read/write ON/OFF");
+MODULE_AUTHOR("Equipo GPIO");
+MODULE_DESCRIPTION("LED driver por acceso directo a registros");
 
+// Prototipos
 static int     led_open(struct inode *, struct file *);
 static int     led_release(struct inode *, struct file *);
 static ssize_t led_read(struct file *, char __user *, size_t, loff_t *);
@@ -23,67 +30,72 @@ static ssize_t led_write(struct file *, const char __user *, size_t, loff_t *);
 static struct file_operations fops = {
     .owner   = THIS_MODULE,
     .open    = led_open,
+    .release = led_release,
     .read    = led_read,
     .write   = led_write,
-    .release = led_release,
 };
 
 static int __init led_init(void)
 {
-    int ret;
+    uint32_t val;
 
-    printk(KERN_INFO "gpio_led: Init module\n");
+    // 1) Reserva espacio para MMIO
+    gpio_virt = ioremap(GPIO_BASE, 0x100);
+    if (!gpio_virt) {
+        pr_err("gpio_led: ioremap failed\n");
+        return -ENOMEM;
+    }
 
+    // 2) Configura GPIO17 (bits 21-23 en GPFSEL1) a '001' = output
+    val = readl(gpio_virt + (GPFSEL1 - GPIO_BASE));
+    val &= ~(7 << 21);
+    val |=  (1 << 21);
+    writel(val, gpio_virt + (GPFSEL1 - GPIO_BASE));
+
+    // Aseguramos LED apagado
+    writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
+    led_state = false;
+
+    // 3) Registro del device file
     majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
     if (majorNumber < 0) {
-        printk(KERN_ERR "gpio_led: Failed to register major number\n");
+        pr_err("gpio_led: register_chrdev failed: %d\n", majorNumber);
+        iounmap(gpio_virt);
         return majorNumber;
     }
-    printk(KERN_INFO "gpio_led: Registered with major %d\n", majorNumber);
-
-    ret = gpio_request(LED_GPIO, DEVICE_NAME);
-    if (ret && ret != -EPROBE_DEFER) {
-        printk(KERN_ERR "gpio_led: gpio_request failed (%d)\n", ret);
-        unregister_chrdev(majorNumber, DEVICE_NAME);
-        return ret;
-    }
-    if (ret == 0)
-        gpio_direction_output(LED_GPIO, 0);  // LED apagado
-
+    pr_info("gpio_led: registered with major %d\n", majorNumber);
     return 0;
 }
 
 static void __exit led_exit(void)
 {
-    gpio_free(LED_GPIO);
+    // Apagar LED
+    writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
+
     unregister_chrdev(majorNumber, DEVICE_NAME);
-    printk(KERN_INFO "gpio_led: Module unloaded, freed major %d\n", majorNumber);
+    iounmap(gpio_virt);
+    pr_info("gpio_led: module unloaded\n");
 }
 
 static int led_open(struct inode *inodep, struct file *filep)
 {
-    printk(KERN_INFO "gpio_led: Device opened\n");
+    pr_info("gpio_led: device opened\n");
     return 0;
 }
 
 static int led_release(struct inode *inodep, struct file *filep)
 {
-    printk(KERN_INFO "gpio_led: Device closed\n");
+    pr_info("gpio_led: device closed\n");
     return 0;
 }
 
 static ssize_t led_read(struct file *filep, char __user *buffer, size_t len, loff_t *offset)
 {
-    const char *state_str = led_state ? "on\n" : "off\n";
-    size_t      state_len = strlen(state_str);
-
-    if (*offset >= state_len)
-        return 0;
-    if (len > state_len - *offset)
-        len = state_len - *offset;
-    if (copy_to_user(buffer, state_str + *offset, len))
-        return -EFAULT;
-
+    const char *s = led_state ? "on\n" : "off\n";
+    size_t sl = strlen(s);
+    if (*offset >= sl) return 0;
+    if (len > sl - *offset) len = sl - *offset;
+    if (copy_to_user(buffer, s + *offset, len)) return -EFAULT;
     *offset += len;
     return len;
 }
@@ -92,27 +104,24 @@ static ssize_t led_write(struct file *filep, const char __user *buffer, size_t l
 {
     char cmd[16];
     size_t cmd_len = len;
+    uint32_t reg;
 
-    if (cmd_len >= sizeof(cmd))
-        return -EINVAL;
-
-    if (copy_from_user(cmd, buffer, cmd_len))
-        return -EFAULT;
+    if (cmd_len >= sizeof(cmd)) return -EINVAL;
+    if (copy_from_user(cmd, buffer, cmd_len)) return -EFAULT;
     cmd[cmd_len] = '\0';
-
-    // Elimina \n y \r al final
-    while (cmd_len > 0 && (cmd[cmd_len-1] == '\n' || cmd[cmd_len-1] == '\r')) {
+    while (cmd_len && (cmd[cmd_len-1]=='\n'||cmd[cmd_len-1]=='\r'))
         cmd[--cmd_len] = '\0';
-    }
 
     if (strcmp(cmd, "on") == 0) {
-        gpio_set_value(LED_GPIO, 1);
+        // SET GPIO17
+        writel((1 << 17), gpio_virt + (GPSET0 - GPIO_BASE));
         led_state = true;
-        printk(KERN_INFO "gpio_led: Turned ON\n");
+        pr_info("gpio_led: Turned ON\n");
     } else if (strcmp(cmd, "off") == 0) {
-        gpio_set_value(LED_GPIO, 0);
+        // CLEAR GPIO17
+        writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
         led_state = false;
-        printk(KERN_INFO "gpio_led: Turned OFF\n");
+        pr_info("gpio_led: Turned OFF\n");
     } else {
         return -EINVAL;
     }
@@ -122,3 +131,4 @@ static ssize_t led_write(struct file *filep, const char __user *buffer, size_t l
 
 module_init(led_init);
 module_exit(led_exit);
+
