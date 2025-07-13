@@ -8,3 +8,16 @@ Este repositorio contiene un **driver de carácter** para controlar un LED vía 
 - [2. Arquitectura del módulo de kernel](docs/2_arquitectura_modulo.md)  
 - [3. Instrucciones de compilación (módulo + app)](docs/3_instrucciones_compilacion.md)  
 - [4. Guía de uso (carga del módulo, creación de nodo, ejecución de la app)](docs/4_guia_uso.md)  
+
+
+
+
+## Autores
+
+- **Oscar David Guerrero Hernández**  
+  - GitHub: [@OscarDavidGuerrero](https://github.com/OscarDavidGuerrero)  
+  - CC: 1192734080
+
+- **Omar Andrés Rodriguez Quiceno**  
+  - GitHub: [@OMANROQUI](https://github.com/OMANROQUI)  
+  - CC: 1007702903
