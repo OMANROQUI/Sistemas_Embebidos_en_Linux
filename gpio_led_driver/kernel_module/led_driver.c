@@ -6,28 +6,28 @@
 #include <linux/string.h>
 #include <linux/io.h>
 
-#define DEVICE_NAME   "gpio_led"
+#define DEVICE_NAME "gpio_led"
+// Para Pi 3/4 usa 0xFE000000 en vez de 0x3F000000 si fuera necesario
 #define PERIPH_BASE   0x3F000000UL
 #define GPIO_BASE     (PERIPH_BASE + 0x200000UL)
-#define GPFSEL1       (GPIO_BASE + 0x04)
-#define GPSET0        (GPIO_BASE + 0x1C)
-#define GPCLR0        (GPIO_BASE + 0x28)
+#define GPFSEL1_OFS   0x04
+#define GPSET0_OFS    0x1C
+#define GPCLR0_OFS    0x28
 
-static void __iomem *gpio_virt;
+static void __iomem *gpio_base;
 static int majorNumber;
-static bool led_state = false;
+static bool led_state;
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Equipo GPIO");
-MODULE_DESCRIPTION("LED driver con logging extenso");
+MODULE_AUTHOR("Persona B – OMANROQUI");
+MODULE_DESCRIPTION("GPIO LED driver por acceso directo a registros");
 
-// Prototipos
 static int     led_open(struct inode *, struct file *);
 static int     led_release(struct inode *, struct file *);
 static ssize_t led_read(struct file *, char __user *, size_t, loff_t *);
 static ssize_t led_write(struct file *, const char __user *, size_t, loff_t *);
 
-static struct file_operations fops = {
+static const struct file_operations fops = {
     .owner   = THIS_MODULE,
     .open    = led_open,
     .read    = led_read,
@@ -37,116 +37,89 @@ static struct file_operations fops = {
 
 static int __init led_init(void)
 {
-    uint32_t val;
+    uint32_t v;
 
-    pr_info("gpio_led: Init module\n");
+    pr_info("gpio_led: Init module (direct regs)\n");
 
-    gpio_virt = ioremap(GPIO_BASE, 0x100);
-    if (!gpio_virt) {
+    gpio_base = ioremap(GPIO_BASE, 0x100);
+    if (!gpio_base) {
         pr_err("gpio_led: ioremap failed\n");
         return -ENOMEM;
     }
-    pr_info("gpio_led: MMIO mapped at %p\n", gpio_virt);
 
-    val = readl(gpio_virt + (GPFSEL1 - GPIO_BASE));
-    pr_debug("gpio_led: GPFSEL1 before = 0x%08x\n", val);
-    val &= ~(7 << 21);
-    val |=  (1 << 21);
-    writel(val, gpio_virt + (GPFSEL1 - GPIO_BASE));
-    pr_info("gpio_led: Configured GPIO17 as output (GPFSEL1 = 0x%08x)\n", val);
+    v = readl(gpio_base + GPFSEL1_OFS);
+    v &= ~(7 << 21);
+    v |=  (1 << 21);          // set GPIO17 as output
+    writel(v, gpio_base + GPFSEL1_OFS);
 
-    writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
-    pr_info("gpio_led: LED initially OFF (GPCLR0 write)\n");
+    // asegurar LED apagado
+    writel(1 << 17, gpio_base + GPCLR0_OFS);
+    led_state = false;
 
     majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
     if (majorNumber < 0) {
         pr_err("gpio_led: register_chrdev failed: %d\n", majorNumber);
-        iounmap(gpio_virt);
+        iounmap(gpio_base);
         return majorNumber;
     }
+
     pr_info("gpio_led: registered with major %d\n", majorNumber);
     return 0;
 }
 
 static void __exit led_exit(void)
 {
-    writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
-    pr_info("gpio_led: LED forced OFF on exit\n");
+    // apagar LED
+    writel(1 << 17, gpio_base + GPCLR0_OFS);
 
     unregister_chrdev(majorNumber, DEVICE_NAME);
-    pr_info("gpio_led: chrdev unregistered\n");
-
-    iounmap(gpio_virt);
-    pr_info("gpio_led: MMIO unmapped\nModule unloaded\n");
+    iounmap(gpio_base);
+    pr_info("gpio_led: module unloaded\n");
 }
 
 static int led_open(struct inode *inodep, struct file *filep)
 {
-    pr_info("gpio_led: Device opened\n");
+    pr_info("gpio_led: device opened\n");
     return 0;
 }
 
 static int led_release(struct inode *inodep, struct file *filep)
 {
-    pr_info("gpio_led: Device closed\n");
+    pr_info("gpio_led: device closed\n");
     return 0;
 }
 
-static ssize_t led_read(struct file *filep, char __user *buffer, size_t len, loff_t *offset)
+static ssize_t led_read(struct file *filep, char __user *buf, size_t len, loff_t *offset)
 {
     const char *s = led_state ? "on\n" : "off\n";
     size_t sl = strlen(s);
     ssize_t to_copy;
 
-    pr_debug("gpio_led: Read requested len=%zu offset=%lld\n", len, *offset);
-    if (*offset >= sl) {
-        pr_debug("gpio_led: Read EOF\n");
+    if (*offset >= sl)
         return 0;
-    }
-  
-//  to_copy = min(len, sl - *offset);
-	{
-	    size_t remaining = sl - *offset;
-	    to_copy = (len < remaining) ? len : remaining;
-	}
-
-    if (copy_to_user(buffer, s + *offset, to_copy)) {
-        pr_err("gpio_led: copy_to_user failed\n");
+    to_copy = (len < sl - *offset) ? len : (sl - *offset);
+    if (copy_to_user(buf, s + *offset, to_copy))
         return -EFAULT;
-    }
     *offset += to_copy;
-    pr_info("gpio_led: Read %zd bytes, new offset=%lld\n", to_copy, *offset);
     return to_copy;
 }
 
-static ssize_t led_write(struct file *filep, const char __user *buffer, size_t len, loff_t *offset)
+static ssize_t led_write(struct file *filep, const char __user *buf, size_t len, loff_t *offset)
 {
-    char cmd[16];
-    size_t cmd_len = min(len, sizeof(cmd)-1);
-//    uint32_t reg;
-
-    if (copy_from_user(cmd, buffer, cmd_len)) {
-        pr_err("gpio_led: copy_from_user failed\n");
-        return -EFAULT;
-    }
-    cmd[cmd_len] = '\0';
-    while (cmd_len && (cmd[cmd_len-1]=='\n' || cmd[cmd_len-1]=='\r'))
-        cmd[--cmd_len] = '\0';
-    pr_info("gpio_led: Write command='%s'\n", cmd);
-
-    if (strcmp(cmd, "on") == 0) {
-        writel((1 << 17), gpio_virt + (GPSET0 - GPIO_BASE));
+    char cmd[8];
+    size_t l = min(len, sizeof(cmd)-1);
+    uint32_t regbit = 1 << 17;
+    if (copy_from_user(cmd, buf, l)) return -EFAULT;
+    cmd[l] = '\0';
+    if (!strncmp(cmd, "on", 2)) {
+        writel(regbit, gpio_base + GPSET0_OFS);
         led_state = true;
-        pr_info("gpio_led: Turned ON (GPSET0 write)\n");
-    } else if (strcmp(cmd, "off") == 0) {
-        writel((1 << 17), gpio_virt + (GPCLR0 - GPIO_BASE));
+    } else if (!strncmp(cmd, "off", 3)) {
+        writel(regbit, gpio_base + GPCLR0_OFS);
         led_state = false;
-        pr_info("gpio_led: Turned OFF (GPCLR0 write)\n");
     } else {
-        pr_warn("gpio_led: Invalid write argument '%s'\n", cmd);
         return -EINVAL;
     }
-
     return len;
 }
 
