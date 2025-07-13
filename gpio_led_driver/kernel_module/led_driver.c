@@ -5,6 +5,8 @@
 #include <linux/uaccess.h>
 #include <linux/string.h>
 #include <linux/io.h>
+#include <linux/gpio.h>      // gpio_set_value(), gpio_is_valid()
+
 
 #define DEVICE_NAME "gpio_led"
 // Para Pi 3/4 usa 0xFE000000 en vez de 0x3F000000 si fuera necesario
@@ -13,6 +15,10 @@
 #define GPFSEL1_OFS   0x04
 #define GPSET0_OFS    0x1C
 #define GPCLR0_OFS    0x28
+#define GPIO_PIN    17
+#define CMD_ON_LEN   2   // longitud de la cadena "on"
+#define CMD_OFF_LEN  3   // longitud de la cadena "off"
+
 
 static void __iomem *gpio_base;
 static int majorNumber;
@@ -25,7 +31,7 @@ MODULE_DESCRIPTION("GPIO LED driver por acceso directo a registros");
 static int     led_open(struct inode *, struct file *);
 static int     led_release(struct inode *, struct file *);
 static ssize_t led_read(struct file *, char __user *, size_t, loff_t *);
-static ssize_t led_write(struct file *, const char __user *, size_t, loff_t *);
+static ssize_t led_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos);
 
 static const struct file_operations fops = {
     .owner   = THIS_MODULE,
@@ -33,6 +39,8 @@ static const struct file_operations fops = {
     .read    = led_read,
     .write   = led_write,
     .release = led_release,
+
+
 };
 
 static int __init led_init(void)
@@ -41,21 +49,23 @@ static int __init led_init(void)
 
     pr_info("gpio_led: Init module (direct regs)\n");
 
-    gpio_base = ioremap(GPIO_BASE, 0x100);
+    /* 1) Mapear regiones de GPIO */
+    gpio_base = ioremap(GPIO_BASE, 0x1000);
     if (!gpio_base) {
-        pr_err("gpio_led: ioremap failed\n");
+        pr_err("gpio_led: fallo en ioremap\n");
         return -ENOMEM;
     }
 
-    v = readl(gpio_base + GPFSEL1_OFS);
-    v &= ~(7 << 21);
-    v |=  (1 << 21);          // set GPIO17 as output
-    writel(v, gpio_base + GPFSEL1_OFS);
+    /* 2) Configurar GPIO_PIN como salida */
+	v = readl(gpio_base + GPFSEL1_OFS);
+	v &= ~(7 << 21);         // limpiar bits para GPIO17
+	v |=  (1 << 21);         // 001 = salida
+	writel(v, gpio_base + GPFSEL1_OFS);
 
-    // asegurar LED apagado
-    writel(1 << 17, gpio_base + GPCLR0_OFS);
-    led_state = false;
+    /* 3) Asegurar LED apagado */
+    writel(1 << GPIO_PIN, gpio_base + GPCLR0_OFS);
 
+    /* 4) Registrar char device */
     majorNumber = register_chrdev(0, DEVICE_NAME, &fops);
     if (majorNumber < 0) {
         pr_err("gpio_led: register_chrdev failed: %d\n", majorNumber);
@@ -69,9 +79,6 @@ static int __init led_init(void)
 
 static void __exit led_exit(void)
 {
-    // apagar LED
-    writel(1 << 17, gpio_base + GPCLR0_OFS);
-
     unregister_chrdev(majorNumber, DEVICE_NAME);
     iounmap(gpio_base);
     pr_info("gpio_led: module unloaded\n");
@@ -104,24 +111,34 @@ static ssize_t led_read(struct file *filep, char __user *buf, size_t len, loff_t
     return to_copy;
 }
 
-static ssize_t led_write(struct file *filep, const char __user *buf, size_t len, loff_t *offset)
+static ssize_t led_write(struct file *file, const char __user *buf,
+                         size_t count, loff_t *ppos)
 {
-    char cmd[8];
-    size_t l = min(len, sizeof(cmd)-1);
-    uint32_t regbit = 1 << 17;
-    if (copy_from_user(cmd, buf, l)) return -EFAULT;
-    cmd[l] = '\0';
-    if (!strncmp(cmd, "on", 2)) {
-        writel(regbit, gpio_base + GPSET0_OFS);
-        led_state = true;
-    } else if (!strncmp(cmd, "off", 3)) {
-        writel(regbit, gpio_base + GPCLR0_OFS);
-        led_state = false;
+    char kbuf[CMD_OFF_LEN + 1] = {0};
+
+    if (count > CMD_OFF_LEN)
+        count = CMD_OFF_LEN;
+    if (copy_from_user(kbuf, buf, count))
+        return -EFAULT;
+    kbuf[count] = '\0';
+
+    if (strncmp(kbuf, "on", CMD_ON_LEN) == 0) {
+        /* Encender: set bit */
+        writel(1 << GPIO_PIN, gpio_base + GPSET0_OFS);
+        pr_info("led_driver: LED ENCENDIDO\n");
+    } else if (strncmp(kbuf, "off", CMD_OFF_LEN) == 0) {
+        /* Apagar: clear bit */
+        writel(1 << GPIO_PIN, gpio_base + GPCLR0_OFS);
+        pr_info("led_driver: LED APAGADO\n");
     } else {
+        pr_warn("led_driver: comando desconocido: %s\n", kbuf);
         return -EINVAL;
     }
-    return len;
+
+    return count;
 }
+
+
 
 module_init(led_init);
 module_exit(led_exit);
