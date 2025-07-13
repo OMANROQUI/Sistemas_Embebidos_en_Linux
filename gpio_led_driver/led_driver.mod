@@ -1,1 +1,0 @@
-/home/oskar/Sistemas_Embebidos_en_Linux/gpio_led_driver/led_driver.o
