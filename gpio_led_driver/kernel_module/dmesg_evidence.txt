@@ -1,0 +1,9 @@
+[13130.709987] gpio_led: Init module (direct regs)
+[13130.710035] gpio_led: registered with major 239
+[13135.687645] gpio_led: device opened
+[13135.687722] gpio_led: LED ENCENDIDO
+[13135.687744] gpio_led: device closed
+[13142.097957] gpio_led: device opened
+[13142.098030] gpio_led: LED APAGADO
+[13142.098052] gpio_led: device closed
+[13149.001521] gpio_led: module unloaded
