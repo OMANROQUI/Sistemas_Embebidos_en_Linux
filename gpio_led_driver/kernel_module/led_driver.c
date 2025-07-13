@@ -103,7 +103,13 @@ static ssize_t led_read(struct file *filep, char __user *buffer, size_t len, lof
         pr_debug("gpio_led: Read EOF\n");
         return 0;
     }
-    to_copy = min(len, sl - *offset);
+  
+//  to_copy = min(len, sl - *offset);
+	{
+	    size_t remaining = sl - *offset;
+	    to_copy = (len < remaining) ? len : remaining;
+	}
+
     if (copy_to_user(buffer, s + *offset, to_copy)) {
         pr_err("gpio_led: copy_to_user failed\n");
         return -EFAULT;
@@ -117,7 +123,7 @@ static ssize_t led_write(struct file *filep, const char __user *buffer, size_t l
 {
     char cmd[16];
     size_t cmd_len = min(len, sizeof(cmd)-1);
-    uint32_t reg;
+//    uint32_t reg;
 
     if (copy_from_user(cmd, buffer, cmd_len)) {
         pr_err("gpio_led: copy_from_user failed\n");
