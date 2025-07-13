@@ -1,4 +1,4 @@
-# user_app/Makefile
+# Makefile para la aplicación de usuario
 
 CC      := gcc
 CFLAGS  := -Wall -O2
