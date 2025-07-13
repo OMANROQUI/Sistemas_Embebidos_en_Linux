@@ -1,0 +1,18 @@
+Script started on 2025-07-13 08:11:33+01:00 [TERM="xterm-256color" TTY="/dev/pts/0" COLUMNS="76" LINES="43"]
+[?2004h]0;oskar@raspberrypi: ~/Sistemas_Embebidos_en_Linux/gpio_led_driver/kernel_module[01;32moskar@raspberrypi[00m:[01;34m~/Sistemas_Embebidos_en_Linux/gpio_led_driver/kernel_module $[00m [7mecho on  > /dev/tu_led[27m
+[7mcat   /dev/tu_led     # debe responder “on”[27m
+[7msleep 1[27m
+[7mecho off > /dev/tu_led[27m
+[7mcat   /dev/tu_led     # debe responder “off”[27m
+[7msleep 1[27m
+[A[A[A[A[A[A[C[C[C[Cecho on  > /dev/tu_led
+cat   /dev/tu_led     # debe responder “on”
+sleep 1
+echo off > /dev/tu_led
+cat   /dev/tu_led     # debe responder “off”
+sleep 1
+[A
+[?2004lonoff[?2004h]0;oskar@raspberrypi: ~/Sistemas_Embebidos_en_Linux/gpio_led_driver/kernel_module[01;32moskar@raspberrypi[00m:[01;34m~/Sistemas_Embebidos_en_Linux/gpio_led_driver/kernel_module $[00m [7mexit[27mexit
+[?2004lexit
+
+Script done on 2025-07-13 08:11:59+01:00 [COMMAND_EXIT_CODE="0"]
